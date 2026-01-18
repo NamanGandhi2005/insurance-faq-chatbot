@@ -105,3 +105,68 @@ class LLMService:
         except Exception as e:
             print(f"LLM Error: {e}")
             return "I apologize, but I encountered an error."
+        
+    def stream_answer(
+        self, 
+        question: str, 
+        context_chunks: list[str], 
+        metadatas: list[dict], 
+        language: str = "en",
+        history: list = []
+    ):
+        """
+        Generator function that yields text tokens as they are generated.
+        """
+        # 1. Format Context
+        formatted_context = []
+        for i, chunk in enumerate(context_chunks):
+            product = metadatas[i].get("product_name", "Unknown Policy")
+            formatted_context.append(f"--- SOURCE: {product} ---\n{chunk}")
+        context_text = "\n\n".join(formatted_context)
+
+        # 2. Format History
+        history_text = ""
+        if history:
+            recent_msgs = history[-4:]
+            conversation_str = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in recent_msgs])
+            history_text = f"PREVIOUS CONVERSATION:\n{conversation_str}\n"
+
+        # 3. Prompt Construction
+        lang_instruction = f"Answer in {language}."
+        if language == "en":
+            lang_instruction = "Answer in the same language/style as the user (English or Hinglish)."
+
+        system_prompt = (
+            "You are an insurance assistant. Use the PREVIOUS CONVERSATION and DOCUMENT CONTEXT to answer. "
+            f"{lang_instruction}"
+        )
+        
+        user_prompt = f"""
+        {history_text}
+        DOCUMENT CONTEXT:
+        {context_text}
+        CURRENT QUESTION: {question}
+        """
+
+        # 4. STREAMING CALL TO OLLAMA
+        stream = ollama.chat(
+            model=self.model, 
+            messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_prompt},
+            ],
+            options={
+                "num_ctx": 3072,
+                "num_predict": 300, 
+                "temperature": 0.7, 
+                "num_thread": 8
+            },
+            keep_alive="1h",
+            stream=True  # <--- CRITICAL: ENABLE STREAMING
+        )
+
+        # Yield chunks
+        for chunk in stream:
+            content = chunk['message']['content']
+            if content:
+                yield content
