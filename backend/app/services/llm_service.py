@@ -67,10 +67,13 @@ class LLMService:
 
         # 4. System Prompt
         system_prompt = (
-            "You are an insurance assistant. Use the PREVIOUS CONVERSATION and DOCUMENT CONTEXT to answer. "
-            "If the user asks about details they mentioned earlier (like claim amounts), use the Conversation History. "
-            "If the user asks about policy rules, use the Document Context. "
-            f"{lang_instruction}"
+            "You are an expert insurance assistant. "
+            "Use the provided DOCUMENT CONTEXT to answer the question. "
+            "RULES:"
+            "1. If the document contains specific numbers, lists, or currency amounts (e.g., 25L, 50L), YOU MUST LIST THEM."
+            "2. Do NOT provide generic definitions or hypothetical examples (like 'say 5 lakhs') unless the user asks for an explanation."
+            "3. If the text looks like a table row (e.g., 'Sum Insured 25L/50L'), extract those values accurately."
+            f" {lang_instruction}"
         )
         
         # 5. Final Prompt Structure
