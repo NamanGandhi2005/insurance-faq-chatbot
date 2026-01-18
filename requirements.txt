@@ -1,0 +1,26 @@
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.9
+
+# Database & ORM
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+alembic==1.13.1  # For DB migrations
+
+# AI & Vector DB
+sentence-transformers==2.3.1
+chromadb==0.4.22
+ollama==0.1.6
+torch==2.1.2
+
+# PDF Processing
+pypdf==4.0.1
+pdfplumber==0.10.3
+
+# Caching & Utils
+redis==5.0.1
+pydantic==2.6.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.1
+aiofiles==23.2.1

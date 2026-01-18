@@ -1,0 +1,26 @@
+# Python internals
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment (Do NOT upload this)
+venv/
+env/
+.venv/
+
+# Environment Variables (Secrets - Do NOT upload)
+.env
+
+# Database & Cache files (Generated locally)
+*.db
+*.sqlite3
+data/vector_db/
+data/embeddings_cache/
+app/database/migrations/versions/
+
+# Logs
+*.log
+
+# IDE settings
+.vscode/
+.idea/
