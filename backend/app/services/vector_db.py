@@ -39,13 +39,20 @@ class VectorDBService:
             embeddings=embeddings
         )
 
-    def search(self, query_embedding: list, n_results: int = 5):
-        """Searches the global collection for relevant chunks."""
+    def search(self, query_embedding: list, n_results: int = 5, product_filter: str = None):
+        """
+        Searches the global collection. 
+        If product_filter is provided (e.g. "Care Supreme"), it restricts search to that product.
+        """
         collection = self.get_global_collection()
+        
+        # Prepare filter dict if provided
+        where_clause = {"product_name": product_filter} if product_filter else None
+        
         return collection.query(
             query_embeddings=[query_embedding],
-            n_results=n_results
-            # We removed the 'where' filter so it searches everything
+            n_results=n_results,
+            where=where_clause  # <--- CRITICAL ADDITION
         )
 
     # ==========================================
