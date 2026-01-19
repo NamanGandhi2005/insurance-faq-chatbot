@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     
     # Database (PostgreSQL)
     POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "root"
+    POSTGRES_PASSWORD: str = "root123"
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: str = "5432"
     POSTGRES_DB: str = "insurance_bot"
