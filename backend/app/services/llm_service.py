@@ -1,50 +1,12 @@
-
-import ollama
 import re
-
-# app/services/llm_service.py
-import time
-import httpx
-from openai import OpenAI
-
+from groq import Groq
 from app.config import settings
 
 
 class LLMService:
     def __init__(self):
-        # Use OpenAI client with Groq's OpenAI-compatible endpoint
-        self.client = OpenAI(
-            api_key=settings.GROQ_API_KEY,
-            base_url="https://api.groq.com/openai/v1",
-            timeout=httpx.Timeout(60.0, connect=10.0),
-            http_client=httpx.Client(
-                timeout=httpx.Timeout(60.0, connect=10.0),
-                follow_redirects=True
-            )
-        )
         self.model = settings.GROQ_MODEL
-        self.max_retries = 3
-
-    def _call_with_retry(self, messages: list, max_tokens: int, temperature: float) -> str:
-        """Helper method to call API with retry logic."""
-        last_error = None
-
-        for attempt in range(self.max_retries):
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature
-                )
-                return response.choices[0].message.content
-            except Exception as e:
-                last_error = e
-                print(f"LLM API attempt {attempt + 1}/{self.max_retries} failed: {e}")
-                if attempt < self.max_retries - 1:
-                    time.sleep(1.5)  # Wait before retry
-
-        raise last_error
+        self.client = Groq(api_key=settings.GROQ_API_KEY)
 
     def contextualize_query(self, history: list, current_question: str) -> str:
         """
@@ -64,20 +26,27 @@ class LLMService:
         )
 
         try:
-            result = self._call_with_retry(
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=50,
-                temperature=0.3
+            chat_completion = self.client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                model=self.model,
+                temperature=0,
+                max_tokens=1024,
+                top_p=1,
+                stop=None,
             )
-            rewritten = response['response'].strip()
+            rewritten = chat_completion.choices[0].message.content.strip()
             # Safety check: if LLM returns empty or hallucinated long text, use original
             if not rewritten or len(rewritten) > len(current_question) * 4:
                 return current_question
             return rewritten
-        except:
+        except Exception as e:
+            print(f"LLM contextualize_query Error: {e}")
             return current_question
-
-    # app/services/llm_service.py
 
     def _build_prompt(self, question, context_chunks, metadatas, language, history):
         # 1. Format and Clean PDF Context using XML tags for clarity
@@ -86,7 +55,7 @@ class LLMService:
             product = metadatas[i].get("product_name", "Unknown Policy")
             # Clean up whitespace to make tables more readable for the AI
             clean_chunk = re.sub(r'\s+', ' ', chunk).strip()
-            formatted_context.append(f"<document source='{product}'>\n{clean_chunk}\n</document>")
+            formatted_context.append(f"<document>\n{clean_chunk}\n</document>")
         context_text = "\n\n".join(formatted_context)
         
         # 2. Format Chat History (remains the same)
@@ -97,9 +66,6 @@ class LLMService:
             history_text = f"<history>\n{conversation_str}\n</history>\n"
 
         # --- THE FINAL, SUPER-STRICT PROMPT ---
-        # app/services/llm_service.py -> _build_prompt function
-
-        # --- NEW "INSURANCE EXPERT" SYSTEM PROMPT ---
         system_prompt = (
             "You are an AI data analyst for an insurance company. Your task is to answer the user's <question> by extracting structured data from the provided <documents>. "
             "Follow this strict process:\n\n"
@@ -114,7 +80,8 @@ class LLMService:
             "- **PRIORITIZE TABLES:** If you see text that looks like a table (e.g., `Sum Insured - 5L/7L/10L`), prioritize extracting from it.\n"
             "- **NO GENERAL KNOWLEDGE:** Do not define what 'Sum Insured' is in general. Only state the specific Sum Insured values found in the documents.\n"
             "- **NO HALLUCINATION:** If you cannot find the exact information, you MUST state: 'The provided documents do not contain specific details on this topic.'\n"
-            "- **NO QUESTIONS:** Never ask the user for clarification. Answer based only on what you are given."
+            "- **NO QUESTIONS:** Never ask the user for clarification. Answer based only on what you are given.\n"
+            "- **DO NOT MENTION SOURCES:** Do not mention the document source in your answer. The answer should be direct and straightforward."
         )
         
         user_prompt = f"""
@@ -145,20 +112,18 @@ class LLMService:
         system_prompt, user_prompt = self._build_prompt(question, context_chunks, metadatas, language, history)
 
         try:
-            result = self._call_with_retry(
+            chat_completion = self.client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                options={
-                    "num_ctx": 2048,
-                    "num_predict": 300, 
-                    "temperature": 0.5,
-                    "num_thread": 8
-                },
-                keep_alive="1h"
+                model=self.model,
+                temperature=0.5,
+                max_tokens=300,
+                top_p=1,
+                stop=None,
             )
-            return result
+            return chat_completion.choices[0].message.content
         except Exception as e:
             print(f"LLM Error: {e}")
             return "I apologize, but I encountered an error generating the response."
@@ -175,23 +140,20 @@ class LLMService:
         system_prompt, user_prompt = self._build_prompt(question, context_chunks, metadatas, language, history)
 
         try:
-            stream = ollama.chat(
+            stream = self.client.chat.completions.create(
                 model=self.model, 
                 messages=[
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': user_prompt},
                 ],
-                options={
-                    "num_ctx": 2048,
-                    "num_predict": 300, 
-                    "temperature": 0.5,
-                    "num_thread": 8
-                },
-                keep_alive="1h",
-                stream=True
+                temperature=0.5,
+                max_tokens=300,
+                top_p=1,
+                stop=None,
+                stream=True,
             )
             for chunk in stream:
-                content = chunk['message']['content']
+                content = chunk.choices[0].delta.content
                 if content:
                     yield content
         except Exception as e:

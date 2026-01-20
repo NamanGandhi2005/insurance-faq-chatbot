@@ -21,6 +21,12 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.APP_NAME)
 
+origins = [
+    "http://localhost:5173",  # Vite Frontend
+    "http://localhost:3000",  # Common alternative
+]
+
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
