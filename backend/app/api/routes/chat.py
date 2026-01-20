@@ -13,6 +13,7 @@ from app.services.llm_service import LLMService
 from app.services.cache_service import CacheService
 from app.models.audit import AuditLog
 from app.models.faq import FAQ
+from app.models.product import Product
 from app.utils.limiter import limiter
 from app.utils.language_detector import detect_language
 
@@ -74,10 +75,17 @@ async def ask_question(
     # ----------------
     # Detect language
     detected_lang = body.language if body.language and body.language != "auto" else detect_language(body.question)
-    
+
     # Context & Session
     product_context = body.product_id if body.product_id else "global"
     session_id = body.session_id if body.session_id else "temp_session"
+
+    # Get product name for filtering (if product_id is specified)
+    product_name = None
+    if body.product_id and body.product_id.isdigit():
+        product = db.query(Product).filter(Product.id == int(body.product_id)).first()
+        if product:
+            product_name = product.name
 
     # Init Services
     cache_service = CacheService()
@@ -163,7 +171,8 @@ async def ask_question(
     # 6. LAYER 3: RAG PIPELINE (Deep Search)
     # --------------------------------------
     # Use n_results=2 for Hardware Optimization
-    search_results = vector_service.search(query_emb, n_results=2)
+    # Filter by product_name if specified, otherwise search all products
+    search_results = vector_service.search(query_emb, n_results=2, product_name=product_name)
     
     if not search_results['documents'] or not search_results['documents'][0]:
         elapsed = time.time() - start_time
