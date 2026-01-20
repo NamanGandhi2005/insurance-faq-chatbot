@@ -2,6 +2,9 @@
 import os
 from pydantic_settings import BaseSettings
 
+# Get the project root directory (insurance-faq-chatbot)
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 class Settings(BaseSettings):
     # App Config
     APP_NAME: str = "Insurance FAQ Chatbot"
@@ -10,7 +13,7 @@ class Settings(BaseSettings):
     
     # Database (PostgreSQL)
     POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "root"
+    POSTGRES_PASSWORD: str = "root123"
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: str = "5432"
     POSTGRES_DB: str = "insurance_bot"
@@ -25,15 +28,21 @@ class Settings(BaseSettings):
     
     # AI Config
     EMBEDDING_MODEL: str = "intfloat/multilingual-e5-base"
+
+    # Groq API Config (fast cloud inference)
+    GROQ_API_KEY: str = ""  # Set via environment variable or .env file
+    GROQ_MODEL: str = "llama-3.1-8b-instant"  # Fast model with good quality
+
+    # Legacy Ollama Config (kept for reference)
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5:3b"
-    VECTOR_DB_PATH: str = os.path.join(os.getcwd(), "../data/vector_db")
-    
+    VECTOR_DB_PATH: str = os.path.join(_BASE_DIR, "data/vector_db")
+
     # File Paths
-    PDF_UPLOAD_DIR: str = os.path.join(os.getcwd(), "../data/pdfs/uploads")
-    PDF_PRELOAD_DIR: str = os.path.join(os.getcwd(), "../data/pdfs/preload")
+    PDF_UPLOAD_DIR: str = os.path.join(_BASE_DIR, "data/pdfs/uploads")
+    PDF_PRELOAD_DIR: str = os.path.join(_BASE_DIR, "data/pdfs/preload")
 
     class Config:
-        env_file = ".env"
+        env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 
 settings = Settings()

@@ -1,10 +1,50 @@
+
 import ollama
 import re
+
+# app/services/llm_service.py
+import time
+import httpx
+from openai import OpenAI
+
 from app.config import settings
+
 
 class LLMService:
     def __init__(self):
-        self.model = settings.OLLAMA_MODEL
+        # Use OpenAI client with Groq's OpenAI-compatible endpoint
+        self.client = OpenAI(
+            api_key=settings.GROQ_API_KEY,
+            base_url="https://api.groq.com/openai/v1",
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            http_client=httpx.Client(
+                timeout=httpx.Timeout(60.0, connect=10.0),
+                follow_redirects=True
+            )
+        )
+        self.model = settings.GROQ_MODEL
+        self.max_retries = 3
+
+    def _call_with_retry(self, messages: list, max_tokens: int, temperature: float) -> str:
+        """Helper method to call API with retry logic."""
+        last_error = None
+
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                last_error = e
+                print(f"LLM API attempt {attempt + 1}/{self.max_retries} failed: {e}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(1.5)  # Wait before retry
+
+        raise last_error
 
     def contextualize_query(self, history: list, current_question: str) -> str:
         """
@@ -14,7 +54,7 @@ class LLMService:
             return current_question
 
         history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history[-4:]])
-        
+
         prompt = (
             "Given the conversation history, rewrite the last user input to be a standalone question. "
             "Do not answer it. Just clarify what the user is asking.\n\n"
@@ -24,11 +64,10 @@ class LLMService:
         )
 
         try:
-            response = ollama.generate(
-                model=self.model, 
-                prompt=prompt,
-                options={"num_ctx": 1024, "num_predict": 40},
-                keep_alive="1h"
+            result = self._call_with_retry(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=50,
+                temperature=0.3
             )
             rewritten = response['response'].strip()
             # Safety check: if LLM returns empty or hallucinated long text, use original
@@ -106,11 +145,10 @@ class LLMService:
         system_prompt, user_prompt = self._build_prompt(question, context_chunks, metadatas, language, history)
 
         try:
-            response = ollama.chat(
-                model=self.model, 
+            result = self._call_with_retry(
                 messages=[
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_prompt},
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
                 ],
                 options={
                     "num_ctx": 2048,
@@ -120,7 +158,7 @@ class LLMService:
                 },
                 keep_alive="1h"
             )
-            return response['message']['content']
+            return result
         except Exception as e:
             print(f"LLM Error: {e}")
             return "I apologize, but I encountered an error generating the response."
