@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "intfloat/multilingual-e5-base"
     
     # Groq API Settings - Add your GROQ_API_KEY to a .env file
-    GROQ_API_KEY: str = "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" 
+    GROQ_API_KEY: str 
     GROQ_MODEL: str = "qwen/qwen3-32b"
 
     VECTOR_DB_PATH: str = os.path.join(os.getcwd(), "../data/vector_db")
