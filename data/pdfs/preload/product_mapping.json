@@ -1,0 +1,8 @@
+{
+  "care_advantage": {
+    "product_name": "Care Advantage",
+    "pdfs": [
+      {"file": "test.pdf"}
+    ]
+  }
+}

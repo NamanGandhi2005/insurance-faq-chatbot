@@ -20,12 +20,15 @@ class VectorDBService:
     def add_documents(self, product_name: str, documents: list, metadatas: list, ids: list, embeddings: list):
         """Stores document chunks with product_name in metadata."""
         collection = self.get_global_collection()
-        
+
+        # Normalize product name (title case) for consistent filtering
+        normalized_name = product_name.strip().title()
+
         # Inject Product Name into metadata so the LLM knows which policy is which
         enhanced_metadatas = []
         for meta in metadatas:
             new_meta = meta.copy()
-            new_meta["product_name"] = product_name
+            new_meta["product_name"] = normalized_name
             # Ensure all metadata values are primitives (str, int, float, bool) for ChromaDB
             # If 'source' is missing, add it
             if "source" not in new_meta:
@@ -39,14 +42,31 @@ class VectorDBService:
             embeddings=embeddings
         )
 
-    def search(self, query_embedding: list, n_results: int = 5):
-        """Searches the global collection for relevant chunks."""
+    def search(self, query_embedding: list, n_results: int = 5, product_name: str = None):
+        """
+        Searches the global collection for relevant chunks.
+
+        Args:
+            query_embedding: The vector embedding of the query
+            n_results: Number of results to return
+            product_name: If specified, only search within this product's documents.
+                         If None or "all", search all products.
+        """
         collection = self.get_global_collection()
-        return collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_results
-            # We removed the 'where' filter so it searches everything
-        )
+
+        # Build query parameters
+        query_params = {
+            "query_embeddings": [query_embedding],
+            "n_results": n_results
+        }
+
+        # Add product filter if specified (and not "all")
+        if product_name and product_name.lower() != "all":
+            # Normalize product name to match stored format (title case)
+            normalized_name = product_name.strip().title()
+            query_params["where"] = {"product_name": normalized_name}
+
+        return collection.query(**query_params)
 
     # ==========================================
     # 2. SEMANTIC CACHING
