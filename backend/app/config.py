@@ -8,16 +8,14 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = "your-super-secret-key-change-this"
     
-    # Database (PostgreSQL)
-    POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "root"
-    POSTGRES_SERVER: str = "localhost"
-    POSTGRES_PORT: str = "5432"
-    POSTGRES_DB: str = "insurance_bot"
+    # Database (SQLite)
+    SQLITE_DB_FILE: str = os.path.join(os.getcwd(), "../data/database.db")
     
     @property
     def DATABASE_URL(self) -> str:
-        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        # The check_same_thread argument is needed only for SQLite.
+        # It's a workaround for how FastAPI handles multithreading.
+        return f"sqlite:///{self.SQLITE_DB_FILE}?check_same_thread=False"
 
     # Redis
     REDIS_HOST: str = "localhost"
@@ -25,8 +23,11 @@ class Settings(BaseSettings):
     
     # AI Config
     EMBEDDING_MODEL: str = "intfloat/multilingual-e5-base"
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "qwen2.5:3b"
+    
+    # Groq API Settings - Add your GROQ_API_KEY to a .env file
+    GROQ_API_KEY: str = "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" 
+    GROQ_MODEL: str = "qwen/qwen3-32b"
+
     VECTOR_DB_PATH: str = os.path.join(os.getcwd(), "../data/vector_db")
     
     # File Paths
