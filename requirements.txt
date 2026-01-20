@@ -1,7 +1,8 @@
-# Web Framework
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-python-multipart==0.0.9
+# Web Framework & Server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+requests>=2.31.0
 
 # Database & ORM
 sqlalchemy==2.0.25
@@ -15,8 +16,8 @@ groq
 torch==2.9.1
 
 # PDF Processing
-pypdf==4.0.1
-pdfplumber==0.10.3
+pdfplumber>=0.10.3
+pypdf>=4.0.1
 
 # Caching & Utils
 redis==5.0.1

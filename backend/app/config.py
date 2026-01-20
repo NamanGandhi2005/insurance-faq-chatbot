@@ -2,6 +2,9 @@
 import os
 from pydantic_settings import BaseSettings
 
+# Get the project root directory (insurance-faq-chatbot)
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 class Settings(BaseSettings):
     # App Config
     APP_NAME: str = "Insurance FAQ Chatbot"
@@ -31,10 +34,10 @@ class Settings(BaseSettings):
     VECTOR_DB_PATH: str = os.path.join(os.getcwd(), "../data/vector_db")
     
     # File Paths
-    PDF_UPLOAD_DIR: str = os.path.join(os.getcwd(), "../data/pdfs/uploads")
-    PDF_PRELOAD_DIR: str = os.path.join(os.getcwd(), "../data/pdfs/preload")
+    PDF_UPLOAD_DIR: str = os.path.join(_BASE_DIR, "data/pdfs/uploads")
+    PDF_PRELOAD_DIR: str = os.path.join(_BASE_DIR, "data/pdfs/preload")
 
     class Config:
-        env_file = ".env"
+        env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 
 settings = Settings()
