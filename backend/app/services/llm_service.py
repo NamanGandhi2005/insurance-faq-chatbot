@@ -54,7 +54,7 @@ class LLMService:
             product = metadatas[i].get("product_name", "Unknown Policy")
             # Clean up whitespace to make tables more readable for the AI
             clean_chunk = re.sub(r'\s+', ' ', chunk).strip()
-            formatted_context.append(f"<document>\n{clean_chunk}\n</document>")
+            formatted_context.append(f"<document source='{product}'>\n{clean_chunk}\n</document>")
         context_text = "\n\n".join(formatted_context)
         
         # 2. Format Chat History (remains the same)
@@ -135,7 +135,7 @@ class LLMService:
         language: str = "en",
         history: list = []
     ):
-        """Generates a streaming answer."""
+        """Generates a streaming answer while suppressing <think> blocks in real-time."""
         system_prompt, user_prompt = self._build_prompt(question, context_chunks, metadatas, language, history)
 
         try:
@@ -151,10 +151,42 @@ class LLMService:
                 stop=None,
                 stream=True,
             )
+            
+            # Buffering logic to hide <think> tags
+            buffer = ""
+            is_answering = False
+
             for chunk in stream:
                 content = chunk.choices[0].delta.content
-                if content:
+                if not content:
+                    continue
+                
+                # If we are already past the thinking phase, yield content immediately
+                if is_answering:
                     yield content
+                    continue
+                
+                # Otherwise, buffer the content
+                buffer += content
+
+                # Check if we have found the end of the thought block
+                if "</think>" in buffer:
+                    # Split the buffer: ignore part before tag, keep part after
+                    parts = buffer.split("</think>")
+                    answer_start = parts[-1]  # The part after </think>
+                    
+                    is_answering = True
+                    if answer_start:
+                        yield answer_start
+                    buffer = "" # clear buffer
+                
+                # Fallback: If buffer gets long and no <think> tag was ever found at the start,
+                # assume the model is answering directly without thoughts.
+                elif len(buffer) > 20 and "<think>" not in buffer:
+                    is_answering = True
+                    yield buffer
+                    buffer = ""
+
         except Exception as e:
             print(f"Stream Error: {e}")
             yield "I apologize, but I encountered an error."
