@@ -42,9 +42,11 @@ export const AuthProvider = ({ children }) => {
 
       return { success: true };
     } catch (error) {
+      const errorMessage = error.response?.data?.detail || 'Login failed';
+      const statusCode = error.response?.status;
       return {
         success: false,
-        error: error.response?.data?.detail || 'Login failed'
+        error: `Error ${statusCode || ''}: ${errorMessage}`
       };
     }
   };

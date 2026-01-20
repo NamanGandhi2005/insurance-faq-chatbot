@@ -42,31 +42,21 @@ class VectorDBService:
             embeddings=embeddings
         )
 
-    def search(self, query_embedding: list, n_results: int = 5, product_name: str = None):
+    def search(self, query_embedding: list, n_results: int = 5, product_filter: str = None):
         """
-        Searches the global collection for relevant chunks.
-
-        Args:
-            query_embedding: The vector embedding of the query
-            n_results: Number of results to return
-            product_name: If specified, only search within this product's documents.
-                         If None or "all", search all products.
+        Searches the global collection. 
+        If product_filter is provided (e.g. "Care Supreme"), it restricts search to that product.
         """
         collection = self.get_global_collection()
-
-        # Build query parameters
-        query_params = {
-            "query_embeddings": [query_embedding],
-            "n_results": n_results
-        }
-
-        # Add product filter if specified (and not "all")
-        if product_name and product_name.lower() != "all":
-            # Normalize product name to match stored format (title case)
-            normalized_name = product_name.strip().title()
-            query_params["where"] = {"product_name": normalized_name}
-
-        return collection.query(**query_params)
+        
+        # Prepare filter dict if provided
+        where_clause = {"product_name": product_filter} if product_filter else None
+        
+        return collection.query(
+            query_embeddings=[query_embedding],
+            n_results=n_results,
+            where=where_clause  # <--- CRITICAL ADDITION
+        )
 
     # ==========================================
     # 2. SEMANTIC CACHING
