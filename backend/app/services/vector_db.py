@@ -20,12 +20,15 @@ class VectorDBService:
     def add_documents(self, product_name: str, documents: list, metadatas: list, ids: list, embeddings: list):
         """Stores document chunks with product_name in metadata."""
         collection = self.get_global_collection()
-        
+
+        # Normalize product name (title case) for consistent filtering
+        normalized_name = product_name.strip().title()
+
         # Inject Product Name into metadata so the LLM knows which policy is which
         enhanced_metadatas = []
         for meta in metadatas:
             new_meta = meta.copy()
-            new_meta["product_name"] = product_name
+            new_meta["product_name"] = normalized_name
             # Ensure all metadata values are primitives (str, int, float, bool) for ChromaDB
             # If 'source' is missing, add it
             if "source" not in new_meta:

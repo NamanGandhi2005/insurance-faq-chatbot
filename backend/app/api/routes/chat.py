@@ -18,6 +18,7 @@ from app.services.llm_service import LLMService
 from app.services.cache_service import CacheService
 from app.models.audit import AuditLog
 from app.models.faq import FAQ
+from app.models.product import Product
 from app.utils.limiter import limiter
 from app.utils.language_detector import detect_language
 
@@ -143,12 +144,33 @@ async def ask_question(
     if not has_numbers and not history:
         semantic_hit = vector_service.search_cache(query_emb, threshold=0.20)
         if semantic_hit:
+
             # ... (return cached response)
             pass
 
     # 5. LAYER 3: RAG PIPELINE (WITH RE-RANKING)
     # A. Retrieve Broadly
     search_results = vector_service.search(query_emb, n_results=15, product_filter=target_product_name)
+
+            elapsed = time.time() - start_time
+            # Update History
+            cache_service.add_to_history(session_id, "user", body.question)
+            cache_service.add_to_history(session_id, "assistant", semantic_hit["answer"])
+            
+            # Promote to Redis
+            cache_service.set_qa_cache(product_context, detected_lang, search_query, semantic_hit["answer"], semantic_hit["sources"])
+            
+            _log_audit(db, search_query, semantic_hit["answer"], detected_lang, elapsed, True, "Semantic Hit")
+            return ChatResponse(
+                answer=semantic_hit["answer"], sources=semantic_hit["sources"], response_time=elapsed,
+                cached=True, detected_language=detected_lang, debug_info=f"Layer 2: Semantic Hit"
+            )
+    # 6. LAYER 3: RAG PIPELINE (Deep Search)
+    # --------------------------------------
+    # Use n_results=2 for Hardware Optimization
+    # Filter by product_name if specified, otherwise search all products
+    search_results = vector_service.search(query_emb, n_results=2, product_name=product_name)
+
     
     if not search_results['documents'] or not search_results['documents'][0]:
         elapsed = time.time() - start_time

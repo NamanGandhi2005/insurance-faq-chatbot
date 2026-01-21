@@ -2,6 +2,7 @@ import re
 from groq import Groq
 from app.config import settings
 
+
 class LLMService:
     def __init__(self):
         self.model = settings.GROQ_MODEL
@@ -15,7 +16,7 @@ class LLMService:
             return current_question
 
         history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history[-4:]])
-        
+
         prompt = (
             "Given the conversation history, rewrite the last user input to be a standalone question. "
             "Do not answer it. Just clarify what the user is asking.\n\n"
@@ -106,8 +107,8 @@ class LLMService:
         try:
             chat_completion = self.client.chat.completions.create(
                 messages=[
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_prompt},
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
                 ],
                 model=self.model,
                 temperature=0.5,
