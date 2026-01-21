@@ -47,11 +47,20 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 
 @app.on_event("startup")
 def startup_event():
+    print("Starting up...")
     db = SessionLocal()
     try:
+        print("Running startup processing...")
         run_startup_processing(db)
+        print("Startup processing finished.")
+    except Exception as e:
+        print(f"An error occurred during startup: {e}")
+        # Optionally, re-raise the exception if you want the app to fail hard
+        # raise e
     finally:
+        print("Closing startup DB session.")
         db.close()
+    print("Startup complete.")
 
 
 @app.get("/")
