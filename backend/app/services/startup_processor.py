@@ -60,7 +60,7 @@ def run_startup_processing(db: Session):
             
             embed_service = EmbeddingService()
             texts = [c["text"] for c in chunks]
-            embeddings = embed_service.generate_batch_embeddings(texts)
+            embeddings = embed_service.generate_batch_document_embeddings(texts)
             
             vector_service = VectorDBService()
             ids = [f"{product_name}_{product.id}_{i}_pre" for i in range(len(chunks))]

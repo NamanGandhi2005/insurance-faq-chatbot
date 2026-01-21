@@ -67,21 +67,16 @@ class LLMService:
 
         # --- THE FINAL, SUPER-STRICT PROMPT ---
         system_prompt = (
-            "You are an AI data analyst for an insurance company. Your task is to answer the user's <question> by extracting structured data from the provided <documents>. "
-            "Follow this strict process:\n\n"
-            "1. **Identify User Intent:** Analyze the <question> to understand the primary topic. Key topics include: 'Sum Insured', 'Eligibility', 'Waiting Period', 'Coverage', 'Bonus', 'Exclusions', or a specific benefit name.\n\n"
-            "2. **Targeted Data Extraction:** Scan the <documents> for sections matching the user's intent. Your goal is to find and extract the following types of information above all else:\n"
-            "   - **Currency Amounts & Limits:** (e.g., '₹5 Lakhs', 'Up to 1 Crore', '50L/100L', 'up to ₹10,000').\n"
-            "   - **Time Periods:** (e.g., '30 days', '24 months', '3 years', '90 days').\n"
-            "   - **Percentages:** (e.g., '10% co-payment', '50% of SI per year').\n"
-            "   - **Lists of Benefits or Conditions:** (e.g., 'In-patient care, Day care treatment...').\n\n"
-            "3. **Synthesize the Final Answer:** Construct a direct answer using ONLY the facts, numbers, and lists you extracted. Start with the most important data point (like the Sum Insured amount) first.\n\n"
-            "**CRITICAL RULES:**\n"
-            "- **PRIORITIZE TABLES:** If you see text that looks like a table (e.g., `Sum Insured - 5L/7L/10L`), prioritize extracting from it.\n"
-            "- **NO GENERAL KNOWLEDGE:** Do not define what 'Sum Insured' is in general. Only state the specific Sum Insured values found in the documents.\n"
-            "- **NO HALLUCINATION:** If you cannot find the exact information, you MUST state: 'The provided documents do not contain specific details on this topic.'\n"
-            "- **NO QUESTIONS:** Never ask the user for clarification. Answer based only on what you are given.\n"
-            "- **DO NOT MENTION SOURCES:** Do not mention the document source in your answer. The answer should be direct and straightforward."
+            "You are an an AI data analyst for an insurance company. Your task is to answer the user's <question> by extracting structured data from the provided <documents>. "
+            "Output your answer directly without any preamble or conversational filler. "
+            "Follow these rules strictly:\n"
+            "- Extract ONLY facts, numbers, and lists from the provided <documents>."
+            "- Prioritize information from tables if available."
+            "- If you cannot find the exact information in the documents, you MUST state: 'The provided documents do not contain specific details on this topic.'"
+            "- Never ask the user for clarification."
+            "- Do not mention the document source in your answer."
+            "- Do not define terms like 'Sum Insured' unless specifically asked for a definition found in the documents. Only state the specific values."
+            f"Provide the answer in {language}."
         )
         
         user_prompt = f"""
@@ -95,8 +90,6 @@ class LLMService:
         <question>
         {question}
         </question>
-
-        Based on your instructions, what is the answer in {language}?
         """
         return system_prompt, user_prompt
 
@@ -153,7 +146,6 @@ class LLMService:
                 stream=True,
             )
             
-            # Buffering logic to hide <think> tags
             buffer = ""
             is_answering = False
 
@@ -162,32 +154,22 @@ class LLMService:
                 if not content:
                     continue
                 
-                # If we are already past the thinking phase, yield content immediately
-                if is_answering:
-                    yield content
-                    continue
-                
-                # Otherwise, buffer the content
                 buffer += content
 
-                # Check if we have found the end of the thought block
-                if "</think>" in buffer:
-                    # Split the buffer: ignore part before tag, keep part after
-                    parts = buffer.split("</think>")
-                    answer_start = parts[-1]  # The part after </think>
-                    
-                    is_answering = True
-                    if answer_start:
-                        yield answer_start
-                    buffer = "" # clear buffer
-                
-                # Fallback: If buffer gets long and no <think> tag was ever found at the start,
-                # assume the model is answering directly without thoughts.
-                elif len(buffer) > 20 and "<think>" not in buffer:
-                    is_answering = True
-                    yield buffer
-                    buffer = ""
+                if not is_answering:
+                    if "</think>" in buffer:
+                        parts = buffer.split("</think>", 1)
+                        answer_start = parts[1]
+                        is_answering = True
+                        if answer_start:
+                            yield answer_start
+                        buffer = ""
+                else:
+                    yield content
+            
+            if not is_answering and buffer:
+                yield buffer
 
         except Exception as e:
-            print(f"Stream Error: {e}")
-            yield "I apologize, but I encountered an error."
+            print(f"LLM Stream Error: {e}")
+            yield "I apologize, but I encountered an error generating the response."

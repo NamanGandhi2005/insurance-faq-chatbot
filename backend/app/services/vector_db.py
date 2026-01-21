@@ -42,7 +42,7 @@ class VectorDBService:
             embeddings=embeddings
         )
 
-    def search(self, query_embedding: list, n_results: int = 5, product_filter: str = None):
+    def search(self, query_embedding: list, n_results: int = 15, product_filter: str = None):
         """
         Searches the global collection. 
         If product_filter is provided (e.g. "Care Supreme"), it restricts search to that product.

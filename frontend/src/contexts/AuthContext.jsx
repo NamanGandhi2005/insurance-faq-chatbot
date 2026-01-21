@@ -51,13 +51,14 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (email, password, fullName, role = 'viewer') => {
+  const register = async (email, password, fullName, role = 'viewer', adminRegistrationKey = null) => {
     try {
       const response = await authAPI.register({
         email,
         password,
         full_name: fullName,
-        role
+        role,
+        admin_registration_key: adminRegistrationKey
       });
       const { access_token } = response.data;
 

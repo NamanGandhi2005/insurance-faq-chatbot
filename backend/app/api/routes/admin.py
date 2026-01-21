@@ -21,6 +21,7 @@ from app.services.embedding_service import EmbeddingService
 from app.services.vector_db import VectorDBService
 from app.services.cache_service import CacheService
 from app.services.startup_processor import run_startup_processing
+from app.utils.encryption import encrypt_id, decrypt_id
 
 router = APIRouter()
 
@@ -29,7 +30,7 @@ router = APIRouter()
 # =======================
 
 class AuditLogResponse(BaseModel):
-    id: int
+    id: str  # Encrypted ID
     question: str
     answer: str
     created_at: datetime
@@ -39,7 +40,7 @@ class AuditLogResponse(BaseModel):
         from_attributes = True
 
 class UserResponse(BaseModel):
-    id: int
+    id: str  # Encrypted ID
     email: str
     full_name: str | None
     role: str
@@ -63,11 +64,11 @@ class FAQUpdate(BaseModel):
     language: str | None = None
 
 class FAQResponse(BaseModel):
-    id: int
+    id: str  # Encrypted ID
     question: str
     answer: str
     language: str
-    product_id: int
+    product_id: str  # Encrypted ID
     created_at: datetime
     
     class Config:
@@ -90,7 +91,7 @@ def process_pdf_background(file_path: str, product_name: str, pdf_db_id: int, db
         # 2. Generate Embeddings
         embed_service = EmbeddingService()
         texts = [c["text"] for c in chunks]
-        embeddings = embed_service.generate_batch_embeddings(texts)
+        embeddings = embed_service.generate_batch_document_embeddings(texts)
         
         # 3. Store in Vector DB (Global Collection)
         vector_service = VectorDBService()
@@ -109,10 +110,6 @@ def process_pdf_background(file_path: str, product_name: str, pdf_db_id: int, db
         )
         
         # 4. Update Database Status to 'completed'
-        # Note: In a real celery task, we'd need a fresh DB session here.
-        # Since this runs in BackgroundTasks (same process), reusing 'db' is risky if request closes.
-        # Ideally, create a new session inside this function using SessionLocal().
-        # For simplicity in this implementation, we assume db session is still valid or handled.
         pdf_record = db.query(PDFDocument).filter(PDFDocument.id == pdf_db_id).first()
         if pdf_record:
             pdf_record.status = "completed"
@@ -134,66 +131,75 @@ def process_pdf_background(file_path: str, product_name: str, pdf_db_id: int, db
 @router.post("/upload-pdf")
 async def upload_pdf(
     background_tasks: BackgroundTasks,
-    product_id: int = Form(...),
+    encrypted_product_id: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
-    # 1. Verify Product exists
+    product_id = decrypt_id(encrypted_product_id)
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # 2. Prepare Directory
+    # Security: Validate content type
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Invalid file type. Only PDFs are allowed.")
+
+    # Security: Read file with a size limit to prevent large file attacks
+    contents = await file.read(settings.MAX_FILE_SIZE + 1)
+    if len(contents) > settings.MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"File size exceeds the limit of {settings.MAX_FILE_SIZE // 1024 // 1024}MB.")
+
+    # Security: Check for PDF magic number (%PDF)
+    if not contents.startswith(b'%PDF-'):
+        raise HTTPException(status_code=400, detail="File is not a valid PDF.")
+
     upload_dir = os.path.join(settings.PDF_UPLOAD_DIR, str(product_id))
     os.makedirs(upload_dir, exist_ok=True)
     
-    # 3. Validate and Save File
-    file_extension = os.path.splitext(file.filename)[1]
-    if file_extension.lower() != ".pdf":
-        raise HTTPException(status_code=400, detail="Only PDF files allowed")
-        
-    unique_filename = f"{uuid.uuid4()}{file_extension}"
+    unique_filename = f"{uuid.uuid4()}.pdf"
     file_path = os.path.join(upload_dir, unique_filename)
     
     with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(contents)
         
-    # 4. Create DB Entry
     new_pdf = PDFDocument(
         product_id=product_id,
         file_name=file.filename,
         file_path=file_path,
-        file_size=os.path.getsize(file_path),
+        file_size=len(contents),
         status="processing"
     )
     db.add(new_pdf)
     db.commit()
     db.refresh(new_pdf)
     
-    # 5. Trigger Background Processing
     background_tasks.add_task(process_pdf_background, file_path, product.name, new_pdf.id, db)
     
-    return {"message": "File uploaded and processing started", "pdf_id": new_pdf.id}
+    return {"message": "File uploaded and processing started", "pdf_id": encrypt_id(new_pdf.id)}
 
-@router.get("/pdfs/{product_id}")
+@router.get("/pdfs/{encrypted_product_id}")
 def list_pdfs(
-    product_id: int, 
+    encrypted_product_id: str, 
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """List all PDFs associated with a product."""
+    product_id = decrypt_id(encrypted_product_id)
     pdfs = db.query(PDFDocument).filter(PDFDocument.product_id == product_id).all()
     return pdfs
 
-@router.get("/products/{product_id}/pdfs/{pdf_id}/status")
+@router.get("/products/{encrypted_product_id}/pdfs/{encrypted_pdf_id}/status")
 def get_pdf_status(
-    product_id: int, 
-    pdf_id: int, 
+    encrypted_product_id: str, 
+    encrypted_pdf_id: str, 
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Check processing status of a specific PDF."""
+    product_id = decrypt_id(encrypted_product_id)
+    pdf_id = decrypt_id(encrypted_pdf_id)
+    
     pdf = db.query(PDFDocument).filter(
         PDFDocument.id == pdf_id, 
         PDFDocument.product_id == product_id
@@ -209,38 +215,38 @@ def get_pdf_status(
         "message": "Ready" if pdf.status == "completed" else "Processing..."
     }
 
-@router.delete("/pdfs/{pdf_id}")
+@router.delete("/pdfs/{encrypted_pdf_id}")
 def delete_pdf(
-    pdf_id: int, 
+    encrypted_pdf_id: str, 
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Delete a PDF file from disk and database."""
+    pdf_id = decrypt_id(encrypted_pdf_id)
     pdf = db.query(PDFDocument).filter(PDFDocument.id == pdf_id).first()
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
     
-    # 1. Remove file from disk
     if os.path.exists(pdf.file_path):
         try:
             os.remove(pdf.file_path)
         except OSError:
-            pass # File might already be gone
+            pass
         
-    # 2. Remove from Database
     db.delete(pdf)
     db.commit()
     
     return {"message": "PDF deleted successfully"}
 
-@router.post("/products/{product_id}/reprocess-pdfs")
+@router.post("/products/{encrypted_product_id}/reprocess-pdfs")
 def reprocess_pdfs(
-    product_id: int, 
+    encrypted_product_id: str, 
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Triggers reprocessing of ALL PDFs for a specific product."""
+    product_id = decrypt_id(encrypted_product_id)
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -250,36 +256,26 @@ def reprocess_pdfs(
     count = 0
     for pdf in pdfs:
         if os.path.exists(pdf.file_path):
-            # Reset status
             pdf.status = "processing"
-            # Trigger background task
             background_tasks.add_task(process_pdf_background, pdf.file_path, product.name, pdf.id, db)
             count += 1
     
     db.commit()
     return {"message": f"Reprocessing triggered for {count} PDFs"}
 
-@router.post("/startup/reload")
-def reload_startup_pdfs(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
-):
-    """Manually triggers the startup folder scan (Approach 1)."""
-    run_startup_processing(db)
-    return {"message": "Startup processing triggered"}
-
 # =======================
 # 4. FAQ MANAGEMENT
 # =======================
 
-@router.post("/products/{product_id}/pre-faq", response_model=FAQResponse)
+@router.post("/products/{encrypted_product_id}/pre-faq", response_model=FAQResponse)
 def add_pre_faq(
-    product_id: int, 
+    encrypted_product_id: str, 
     faq_data: FAQCreate, 
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Add a manually managed FAQ to the database."""
+    product_id = decrypt_id(encrypted_product_id)
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -293,25 +289,46 @@ def add_pre_faq(
     db.add(new_faq)
     db.commit()
     db.refresh(new_faq)
-    return new_faq
+    return FAQResponse(
+        id=encrypt_id(new_faq.id),
+        question=new_faq.question,
+        answer=new_faq.answer,
+        language=new_faq.language,
+        product_id=encrypt_id(new_faq.product_id),
+        created_at=new_faq.created_at
+    )
 
-@router.get("/products/{product_id}/pre-faq", response_model=List[FAQResponse])
+@router.get("/products/{encrypted_product_id}/pre-faq", response_model=List[FAQResponse])
 def get_pre_faqs(
-    product_id: int, 
+    encrypted_product_id: str, 
     db: Session = Depends(get_db)
 ):
     """Get all FAQs for a product (Public or Admin)."""
-    return db.query(FAQ).filter(FAQ.product_id == product_id).all()
+    product_id = decrypt_id(encrypted_product_id)
+    faqs = db.query(FAQ).filter(FAQ.product_id == product_id).all()
+    return [
+        FAQResponse(
+            id=encrypt_id(f.id),
+            question=f.question,
+            answer=f.answer,
+            language=f.language,
+            product_id=encrypt_id(f.product_id),
+            created_at=f.created_at
+        ) for f in faqs
+    ]
 
-@router.put("/products/{product_id}/pre-faq/{faq_id}", response_model=FAQResponse)
+@router.put("/products/{encrypted_product_id}/pre-faq/{encrypted_faq_id}", response_model=FAQResponse)
 def update_pre_faq(
-    product_id: int,
-    faq_id: int,
+    encrypted_product_id: str,
+    encrypted_faq_id: str,
     faq_data: FAQUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Update an existing FAQ."""
+    product_id = decrypt_id(encrypted_product_id)
+    faq_id = decrypt_id(encrypted_faq_id)
+    
     faq = db.query(FAQ).filter(FAQ.id == faq_id, FAQ.product_id == product_id).first()
     if not faq:
         raise HTTPException(status_code=404, detail="FAQ not found")
@@ -322,16 +339,26 @@ def update_pre_faq(
     
     db.commit()
     db.refresh(faq)
-    return faq
+    return FAQResponse(
+        id=encrypt_id(faq.id),
+        question=faq.question,
+        answer=faq.answer,
+        language=faq.language,
+        product_id=encrypt_id(faq.product_id),
+        created_at=faq.created_at
+    )
 
-@router.delete("/products/{product_id}/pre-faq/{faq_id}")
+@router.delete("/products/{encrypted_product_id}/pre-faq/{encrypted_faq_id}")
 def delete_pre_faq(
-    product_id: int,
-    faq_id: int,
+    encrypted_product_id: str,
+    encrypted_faq_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Delete an FAQ."""
+    product_id = decrypt_id(encrypted_product_id)
+    faq_id = decrypt_id(encrypted_faq_id)
+    
     faq = db.query(FAQ).filter(FAQ.id == faq_id, FAQ.product_id == product_id).first()
     if not faq:
         raise HTTPException(status_code=404, detail="FAQ not found")
@@ -351,7 +378,16 @@ def get_audit_logs(
     current_user: User = Depends(get_current_admin)
 ):
     """Retrieve latest chat history/audit logs."""
-    return db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit).all()
+    logs = db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit).all()
+    return [
+        AuditLogResponse(
+            id=encrypt_id(log.id),
+            question=log.question,
+            answer=log.answer,
+            created_at=log.created_at,
+            response_time_ms=log.response_time_ms
+        ) for log in logs
+    ]
 
 # =======================
 # 6. USER MANAGEMENT
@@ -364,16 +400,26 @@ def list_users(
 ):
     """List all registered users."""
     users = db.query(User).all()
-    return users
+    return [
+        UserResponse(
+            id=encrypt_id(user.id),
+            email=user.email,
+            full_name=user.full_name,
+            role=user.role,
+            is_active=user.is_active,
+            created_at=user.created_at
+        ) for user in users
+    ]
 
-@router.put("/users/{user_id}/role", response_model=UserResponse)
+@router.put("/users/{encrypted_user_id}/role", response_model=UserResponse)
 def update_user_role(
-    user_id: int,
+    encrypted_user_id: str,
     role_data: UserRoleUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Promote or Demote a user."""
+    user_id = decrypt_id(encrypted_user_id)
     user_to_update = db.query(User).filter(User.id == user_id).first()
     if not user_to_update:
         raise HTTPException(status_code=404, detail="User not found")
@@ -382,7 +428,6 @@ def update_user_role(
     if role_data.role not in valid_roles:
         raise HTTPException(status_code=400, detail=f"Invalid role. Choose from: {valid_roles}")
 
-    # Safety Check: Admin cannot demote themselves
     if user_to_update.id == current_user.id and role_data.role != "admin":
         raise HTTPException(status_code=400, detail="You cannot demote yourself.")
 
@@ -390,11 +435,24 @@ def update_user_role(
     db.commit()
     db.refresh(user_to_update)
     
-    return user_to_update
-
-# =======================
-# 7. CACHE & SYSTEM MANAGEMENT
-# =======================
+    return UserResponse(
+        id=encrypt_id(user_to_update.id),
+        email=user_to_update.email,
+        full_name=user_to_update.full_name,
+        role=user_to_update.role,
+        is_active=user_to_update.is_active,
+        created_at=user_to_update.created_at
+    )
+    
+# Other routes remain the same...
+@router.post("/startup/reload")
+def reload_startup_pdfs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """Manually triggers the startup folder scan (Approach 1)."""
+    run_startup_processing(db)
+    return {"message": "Startup processing triggered"}
 
 @router.get("/cache/stats")
 def get_cache_stats(

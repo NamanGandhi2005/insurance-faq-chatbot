@@ -30,7 +30,8 @@ class PDFProcessor:
         """Splits text into overlapping chunks with metadata."""
         words = text.split()
         chunks = []
-        
+        filename = meta.get("source", "Unknown")
+
         for i in range(0, len(words), self.chunk_size - self.overlap):
             chunk_words = words[i : i + self.chunk_size]
             chunk_text = " ".join(chunk_words)
@@ -38,9 +39,11 @@ class PDFProcessor:
             # Skip chunks that are too small (e.g., footer noise)
             if len(chunk_words) < 50:
                 continue
+            
+            enhanced_chunk = f"Source Document: {filename}\nSection: Policy Details\nContent: {chunk_text}"
 
             chunks.append({
-                "text": chunk_text,
+                "text": enhanced_chunk,
                 "metadata": {
                     **meta,
                     "chunk_index": len(chunks),
