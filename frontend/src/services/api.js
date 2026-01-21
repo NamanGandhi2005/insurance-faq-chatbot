@@ -42,7 +42,66 @@ export const authAPI = {
 
 export const chatAPI = {
   ask: (data) => api.post('/chat/ask', data),
-  getSuggestions: () => api.get('/chat/suggestions')
+  getSuggestions: () => api.get('/chat/suggestions'),
+  askStream: async (data, onNewChunk) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_BASE_URL}/chat/ask_stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    });
+
+    if (!response.body) {
+      throw new Error("ReadableStream not supported by browser or response body is null");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = ''; // Buffer to hold incomplete lines
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break; // Stream finished
+        }
+
+        // Decode the incoming value and add to buffer
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process all complete lines in the buffer
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // The last item might be an incomplete line, keep it in buffer
+
+        lines.forEach(line => {
+            if (line.trim() === '') return; // Skip empty lines
+
+            try {
+                onNewChunk(JSON.parse(line)); // Send individual chunk to the component
+            } catch (e) {
+                console.error("Error parsing JSON chunk:", e, "Line:", line);
+            }
+        });
+      }
+
+      // After the stream ends, process any remaining buffer content
+      if (buffer.trim()) {
+          try {
+              onNewChunk(JSON.parse(buffer)); // Send final chunk
+          } catch (e) {
+              console.error("Error parsing final JSON chunk:", e, "Line:", buffer);
+          }
+      }
+    } catch (error) {
+        console.error("Stream reading error:", error);
+        onNewChunk({ type: 'error', content: `Stream error: ${error.message}` });
+    } finally {
+        reader.releaseLock();
+    }
+  }
 };
 
 export const productsAPI = {

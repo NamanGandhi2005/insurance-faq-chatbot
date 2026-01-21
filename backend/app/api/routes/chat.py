@@ -138,7 +138,7 @@ async def ask_question(
         pass
     
     # Layer 2: Semantic
-    query_emb = embed_service.generate_embedding(search_query)
+    query_emb = embed_service.generate_query_embedding(search_query)
     has_numbers = bool(re.search(r'\d', search_query))
     if not has_numbers and not history:
         semantic_hit = vector_service.search_cache(query_emb, threshold=0.20)
@@ -270,7 +270,7 @@ async def ask_question_stream(
             if len(products_to_compare) >= 2:
                 final_chunks, final_metas = [], []
                 for prod_name in products_to_compare[:2]: # Limit to comparing 2 products for performance
-                    comp_query_emb = embed_service.generate_embedding(f"Summary of key features for {prod_name}")
+                    comp_query_emb = embed_service.generate_query_embedding(f"Summary of key features for {prod_name}")
                     search_results = vector_service.search(comp_query_emb, n_results=2, product_filter=prod_name)
                     if search_results['documents'] and search_results['documents'][0]:
                         final_chunks.extend(search_results['documents'][0]); final_metas.extend(search_results['metadatas'][0])
@@ -305,7 +305,7 @@ async def ask_question_stream(
         if not cached_answer:
             has_numbers = bool(re.search(r'\d', search_query))
             if not has_numbers and not history:
-                query_emb = embed_service.generate_embedding(search_query)
+                query_emb = embed_service.generate_query_embedding(search_query)
                 semantic_hit = vector_service.search_cache(query_emb, threshold=0.20)
                 if semantic_hit: cached_answer, source_info, debug_msg = semantic_hit["answer"], semantic_hit["sources"], "Layer 2: Semantic Hit"
         
@@ -323,7 +323,7 @@ async def ask_question_stream(
 
         # 5. RAG PIPELINE (Layer 3)
         # -------------------------
-        query_emb = embed_service.generate_embedding(search_query)
+        query_emb = embed_service.generate_query_embedding(search_query)
         search_results = vector_service.search(query_emb, n_results=15, product_filter=target_product_name)
         
         if not search_results['documents'] or not search_results['documents'][0]:

@@ -90,7 +90,7 @@ def process_pdf_background(file_path: str, product_name: str, pdf_db_id: int, db
         # 2. Generate Embeddings
         embed_service = EmbeddingService()
         texts = [c["text"] for c in chunks]
-        embeddings = embed_service.generate_batch_embeddings(texts)
+        embeddings = embed_service.generate_batch_document_embeddings(texts)
         
         # 3. Store in Vector DB (Global Collection)
         vector_service = VectorDBService()

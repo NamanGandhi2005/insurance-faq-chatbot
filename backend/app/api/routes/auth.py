@@ -7,6 +7,7 @@ from app.database.connection import get_db
 from app.models.user import User
 from app.utils.security import verify_password, get_password_hash, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from datetime import timedelta
+from app.config import settings
 
 router = APIRouter()
 
@@ -14,7 +15,8 @@ class UserCreate(BaseModel):
     email: str
     password: str
     full_name: str
-    role: str = "viewer" # Allow setting role for simplified setup (in prod, default to viewer)
+    role: str = "viewer"
+    admin_registration_key: str | None = None
 
 class Token(BaseModel):
     access_token: str
@@ -26,6 +28,10 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    if user.role == "admin":
+        if user.admin_registration_key != settings.ADMIN_REGISTRATION_KEY:
+            raise HTTPException(status_code=403, detail="Invalid admin registration key")
     
     # Create User
     hashed_pw = get_password_hash(user.password)
